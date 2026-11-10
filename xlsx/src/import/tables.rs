@@ -32,10 +32,7 @@ pub(crate) fn load_table<R: Read + std::io::Seek>(
     let document = roxmltree::Document::parse(&text)?;
 
     // table
-    let table = document
-        .root()
-        .first_child()
-        .ok_or_else(|| XlsxError::Xml("Corrupt XML structure".to_string()))?;
+    let table = document.root_element();
 
     // Name and display name are normally the same and are unique in a workbook
     // They also need to be different from any defined name
@@ -110,7 +107,7 @@ pub(crate) fn load_table<R: Read + std::io::Seek>(
         .collect::<Vec<Node>>();
 
     let has_filters = if let Some(filter) = auto_filter.first() {
-        filter.children().count() > 0
+        filter.children().filter(Node::is_element).count() > 0
     } else {
         false
     };

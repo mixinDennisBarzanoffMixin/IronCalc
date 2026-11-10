@@ -24,7 +24,7 @@ use crate::error::XlsxError;
 
 use super::{
     tables::load_table,
-    util::{get_attribute, get_color, get_number},
+    util::{get_attribute, get_child, get_color, get_number},
 };
 
 pub(crate) struct Sheet {
@@ -124,7 +124,7 @@ mod test {
 fn load_dimension(ws: Node) -> String {
     // <dimension ref="A1:O18"/>
     let application_nodes = ws
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("dimension"))
         .collect::<Vec<Node>>();
     if application_nodes.len() == 1 {
@@ -146,11 +146,11 @@ fn load_columns(ws: Node) -> Result<Vec<Col>, XlsxError> {
     // </cols>
     let mut cols = Vec::new();
     let columns = ws
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("cols"))
         .collect::<Vec<Node>>();
     if columns.len() == 1 {
-        for col in columns[0].children() {
+        for col in columns[0].children().filter(Node::is_element) {
             let min = get_attribute(&col, "min")?;
             let min = min.parse::<i32>()?;
             let max = get_attribute(&col, "max")?;
@@ -180,11 +180,11 @@ fn load_merge_cells(ws: Node) -> Result<Vec<String>, XlsxError> {
     // </mergeCells>
     let mut merge_cells = Vec::new();
     let merge_cells_nodes = ws
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("mergeCells"))
         .collect::<Vec<Node>>();
     if merge_cells_nodes.len() == 1 {
-        for merge_cell in merge_cells_nodes[0].children() {
+        for merge_cell in merge_cells_nodes[0].children().filter(Node::is_element) {
             let reference = get_attribute(&merge_cell, "ref")?.to_string();
             merge_cells.push(reference);
         }
@@ -198,12 +198,12 @@ fn load_sheet_color(ws: Node) -> Result<Option<String>, XlsxError> {
     // </sheetPr>
     let mut color = None;
     let sheet_pr = ws
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("sheetPr"))
         .collect::<Vec<Node>>();
     if sheet_pr.len() == 1 {
         let tabs = sheet_pr[0]
-            .children()
+            .children().filter(Node::is_element)
             .filter(|n| n.has_tag_name("tabColor"))
             .collect::<Vec<Node>>();
         if tabs.len() == 1 {
@@ -222,16 +222,13 @@ fn load_comments<R: Read + std::io::Seek>(
     let mut text = String::new();
     file.read_to_string(&mut text)?;
     let doc = roxmltree::Document::parse(&text)?;
-    let ws = doc
-        .root()
-        .first_child()
-        .ok_or_else(|| XlsxError::Xml("Corrupt XML structure".to_string()))?;
+    let ws = doc.root_element();
     let comment_list = ws
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("commentList"))
         .collect::<Vec<Node>>();
     if comment_list.len() == 1 {
-        for comment in comment_list[0].children() {
+        for comment in comment_list[0].children().filter(Node::is_element) {
             let text = comment
                 .descendants()
                 .filter(|n| n.has_tag_name("t"))
@@ -390,7 +387,7 @@ fn get_cell_from_excel(
             }
             "d" => {
                 // Not implemented
-                println!("Invalid type (d) in {sheet_name}!{cell_ref}");
+
                 Cell::ErrorCell {
                     ei: Error::NIMPL,
                     s: cell_style,
@@ -410,7 +407,7 @@ fn get_cell_from_excel(
             "empty" => Cell::EmptyCell { s: cell_style },
             _ => {
                 // error
-                println!("Unexpected type ({cell_type}) in {sheet_name}!{cell_ref}");
+
                 Cell::ErrorCell {
                     ei: Error::ERROR,
                     s: cell_style,
@@ -452,7 +449,7 @@ fn get_cell_from_excel(
                 // Not implemented
                 let o = format!("{sheet_name}!{cell_ref}");
                 let m = Error::NIMPL.to_string();
-                println!("Invalid type (s) in {sheet_name}!{cell_ref}");
+
                 Cell::CellFormulaError {
                     f: formula_index,
                     ei: Error::NIMPL,
@@ -471,7 +468,7 @@ fn get_cell_from_excel(
             }
             "d" => {
                 // Not implemented
-                println!("Invalid type (d) in {sheet_name}!{cell_ref}");
+
                 let o = format!("{sheet_name}!{cell_ref}");
                 let m = Error::NIMPL.to_string();
                 Cell::CellFormulaError {
@@ -492,7 +489,7 @@ fn get_cell_from_excel(
             }
             _ => {
                 // error
-                println!("Unexpected type ({cell_type}) in {sheet_name}!{cell_ref}");
+
                 let o = format!("{sheet_name}!{cell_ref}");
                 let m = Error::ERROR.to_string();
                 Cell::CellFormulaError {
@@ -528,11 +525,8 @@ fn load_sheet_rels<R: Read + std::io::Seek>(
     file.unwrap().read_to_string(&mut text)?;
     let doc = roxmltree::Document::parse(&text)?;
 
-    let rels = doc
-        .root()
-        .first_child()
-        .ok_or_else(|| XlsxError::Xml("Corrupt XML structure".to_string()))?
-        .children()
+    let rels = doc.root_element()
+        .children().filter(Node::is_element)
         .collect::<Vec<Node>>();
     for rel in rels {
         let t = get_attribute(&rel, "Type")?.to_string();
@@ -611,7 +605,7 @@ fn get_sheet_view(ws: Node) -> SheetView {
 
     // In IronCalc there can only be one sheetView
     let sheet_views = ws
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("sheetViews"))
         .collect::<Vec<Node>>();
 
@@ -621,7 +615,7 @@ fn get_sheet_view(ws: Node) -> SheetView {
     }
 
     let sheet_view = sheet_views[0]
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("sheetView"))
         .collect::<Vec<Node>>();
 
@@ -635,7 +629,7 @@ fn get_sheet_view(ws: Node) -> SheetView {
     let show_grid_lines = sheet_view.attribute("showGridLines").unwrap_or("1") == "1";
 
     let pane = sheet_view
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("pane"))
         .collect::<Vec<Node>>();
 
@@ -651,7 +645,7 @@ fn get_sheet_view(ws: Node) -> SheetView {
         }
     }
     let selections = sheet_view
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("selection"))
         .collect::<Vec<Node>>();
 
@@ -711,10 +705,7 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
     let mut text = String::new();
     file.read_to_string(&mut text)?;
     let doc = roxmltree::Document::parse(&text)?;
-    let ws = doc
-        .root()
-        .first_child()
-        .ok_or_else(|| XlsxError::Xml("Corrupt XML structure".to_string()))?;
+    let ws = doc.root_element();
     let mut shared_formulas = Vec::new();
 
     let dimension = load_dimension(ws);
@@ -737,16 +728,13 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
     // holds the row heights
     let mut rows = Vec::new();
     let mut sheet_data = SheetData::new();
-    let sheet_data_nodes = ws
-        .children()
-        .filter(|n| n.has_tag_name("sheetData"))
-        .collect::<Vec<Node>>()[0];
+    let sheet_data_nodes = get_child(ws, "sheetData")?;
 
     let default_row_height = 14.5;
 
     // holds a map from the formula index in Excel to the index in IronCalc
     let mut index_map = HashMap::new();
-    for row in sheet_data_nodes.children() {
+    for row in sheet_data_nodes.children().filter(Node::is_element) {
         // This is the row number 1-indexed
         let row_index = get_attribute(&row, "r")?.parse::<i32>()?;
         // `spans` is not used in IronCalc at the moment (it's an optimization)
@@ -803,7 +791,7 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
         // cm: cell metadata (used for dynamic arrays)
         // vm: value metadata (used for #SPILL! and #CALC! errors)
         // ph: Show Phonetic, unused
-        for cell in row.children() {
+        for cell in row.children().filter(Node::is_element) {
             let cell_ref = get_attribute(&cell, "r")?;
             let column_letter = get_column_from_ref(cell_ref);
             let column = column_to_number(column_letter.as_str()).map_err(XlsxError::Xml)?;
@@ -811,7 +799,7 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
             let value_metadata = cell.attribute("vm");
 
             // We check the value "v" child.
-            let vs: Vec<Node> = cell.children().filter(|n| n.has_tag_name("v")).collect();
+            let vs: Vec<Node> = cell.children().filter(Node::is_element).filter(|n| n.has_tag_name("v")).collect();
             let cell_value = if vs.len() == 1 {
                 Some(vs[0].text().unwrap_or(""))
             } else {
@@ -824,7 +812,7 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
             //   </is>
             // </c>
             let cell_rich_text_nodes: Vec<Node> =
-                cell.children().filter(|n| n.has_tag_name("is")).collect();
+                cell.children().filter(Node::is_element).filter(|n| n.has_tag_name("is")).collect();
             let cell_rich_text = if cell_rich_text_nodes.is_empty() {
                 None
             } else {
@@ -879,7 +867,7 @@ pub(super) fn load_sheet<R: Read + std::io::Seek>(
             // In IronCalc two cells have the same formula iff the R1C1 representation is the same
             // TODO: This algorithm could end up with "repeated" shared formulas
             //       We could solve that with a second transversal.
-            let fs: Vec<Node> = cell.children().filter(|n| n.has_tag_name("f")).collect();
+            let fs: Vec<Node> = cell.children().filter(Node::is_element).filter(|n| n.has_tag_name("f")).collect();
             let mut formula_index = -1;
             if fs.len() == 1 {
                 // formula types:

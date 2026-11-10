@@ -26,7 +26,7 @@ where
 
 pub(super) fn get_value_or_default(node: &Node, tag_name: &str, default: &str) -> String {
     let application_nodes = node
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name(tag_name))
         .collect::<Vec<Node>>();
     if application_nodes.len() == 1 {
@@ -64,7 +64,7 @@ pub(super) fn get_color(node: Node) -> Result<Option<String>, XlsxError> {
         // A boolean value indicating the color is automatic and system color dependent.
         Ok(None)
     } else {
-        println!("Unexpected color node {node:?}");
+
         Ok(None)
     }
 }
@@ -77,4 +77,10 @@ pub(super) fn get_bool(node: Node, s: &str) -> bool {
 pub(super) fn get_bool_false(node: Node, s: &str) -> bool {
     // defaults to false
     matches!(node.attribute(s), Some("1"))
+}
+
+/// Required XML collections must fail as typed input errors, never index panics.
+pub(super) fn get_child<'a, 'input>(node: Node<'a, 'input>, name: &str) -> Result<Node<'a, 'input>, XlsxError> {
+    node.children().find(|child| child.has_tag_name(name))
+        .ok_or_else(|| XlsxError::Xml(format!("Missing {name} collection")))
 }

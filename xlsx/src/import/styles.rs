@@ -8,13 +8,13 @@ use roxmltree::Node;
 
 use crate::error::XlsxError;
 
-use super::util::{get_attribute, get_bool, get_bool_false, get_color, get_number};
+use super::util::{get_attribute, get_child, get_bool, get_bool_false, get_color, get_number};
 
 fn get_border(node: Node, name: &str) -> Result<Option<BorderItem>, XlsxError> {
     let style;
     let color;
     let border_nodes = node
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name(name))
         .collect::<Vec<Node>>();
     if border_nodes.len() == 1 {
@@ -36,7 +36,7 @@ fn get_border(node: Node, name: &str) -> Result<Option<BorderItem>, XlsxError> {
         };
 
         let color_node = border
-            .children()
+            .children().filter(Node::is_element)
             .filter(|n| n.has_tag_name("color"))
             .collect::<Vec<Node>>();
         if color_node.len() == 1 {
@@ -57,18 +57,15 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
     let mut text = String::new();
     file.read_to_string(&mut text)?;
     let doc = roxmltree::Document::parse(&text)?;
-    let style_sheet = doc
-        .root()
-        .first_child()
-        .ok_or_else(|| XlsxError::Xml("Corrupt XML structure".to_string()))?;
+    let style_sheet = doc.root_element();
 
     let mut num_fmts = Vec::new();
     let num_fmts_nodes = style_sheet
-        .children()
+        .children().filter(Node::is_element)
         .filter(|n| n.has_tag_name("numFmts"))
         .collect::<Vec<Node>>();
     if num_fmts_nodes.len() == 1 {
-        for num_fmt in num_fmts_nodes[0].children() {
+        for num_fmt in num_fmts_nodes[0].children().filter(Node::is_element) {
             let num_fmt_id = get_number(num_fmt, "numFmtId");
             let format_code = num_fmt.attribute("formatCode").unwrap_or("").to_string();
             num_fmts.push(NumFmt {
@@ -79,11 +76,8 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
     }
 
     let mut fonts = Vec::new();
-    let font_nodes = style_sheet
-        .children()
-        .filter(|n| n.has_tag_name("fonts"))
-        .collect::<Vec<Node>>()[0];
-    for font in font_nodes.children() {
+    let font_nodes = get_child(style_sheet, "fonts")?;
+    for font in font_nodes.children().filter(Node::is_element) {
         let mut sz = 11;
         let mut name = "Calibri".to_string();
         // NOTE: In Excel you can have simple underline or double underline
@@ -97,7 +91,7 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
         let mut color = Some("#000000".to_string());
         let mut family = 2;
         let mut scheme = FontScheme::default();
-        for feature in font.children() {
+        for feature in font.children().filter(Node::is_element) {
             match feature.tag_name().name() {
                 "sz" => {
                     sz = feature
@@ -142,7 +136,7 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
                 }
                 "charset" => {}
                 _ => {
-                    println!("Unexpected feature {feature:?}");
+
                 }
             }
         }
@@ -160,13 +154,10 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
     }
 
     let mut fills = Vec::new();
-    let fill_nodes = style_sheet
-        .children()
-        .filter(|n| n.has_tag_name("fills"))
-        .collect::<Vec<Node>>()[0];
-    for fill in fill_nodes.children() {
+    let fill_nodes = get_child(style_sheet, "fills")?;
+    for fill in fill_nodes.children().filter(Node::is_element) {
         let pattern_fill = fill
-            .children()
+            .children().filter(Node::is_element)
             .filter(|n| n.has_tag_name("patternFill"))
             .collect::<Vec<Node>>();
         if pattern_fill.len() != 1 {
@@ -187,7 +178,7 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
             .to_string();
         let mut fg_color = None;
         let mut bg_color = None;
-        for feature in pattern_fill.children() {
+        for feature in pattern_fill.children().filter(Node::is_element) {
             match feature.tag_name().name() {
                 "fgColor" => {
                     fg_color = get_color(feature)?;
@@ -196,8 +187,8 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
                     bg_color = get_color(feature)?;
                 }
                 _ => {
-                    println!("Unexpected pattern");
-                    dbg!(feature);
+
+
                 }
             }
         }
@@ -209,11 +200,8 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
     }
 
     let mut borders = Vec::new();
-    let border_nodes = style_sheet
-        .children()
-        .filter(|n| n.has_tag_name("borders"))
-        .collect::<Vec<Node>>()[0];
-    for border in border_nodes.children() {
+    let border_nodes = get_child(style_sheet, "borders")?;
+    for border in border_nodes.children().filter(Node::is_element) {
         let diagonal_up = get_bool_false(border, "diagonal_up");
         let diagonal_down = get_bool_false(border, "diagonal_down");
         let left = get_border(border, "left")?;
@@ -233,11 +221,8 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
     }
 
     let mut cell_style_xfs = Vec::new();
-    let cell_style_xfs_nodes = style_sheet
-        .children()
-        .filter(|n| n.has_tag_name("cellStyleXfs"))
-        .collect::<Vec<Node>>()[0];
-    for xfs in cell_style_xfs_nodes.children() {
+    let cell_style_xfs_nodes = get_child(style_sheet, "cellStyleXfs")?;
+    for xfs in cell_style_xfs_nodes.children().filter(Node::is_element) {
         let num_fmt_id = get_number(xfs, "numFmtId");
         let font_id = get_number(xfs, "fontId");
         let fill_id = get_number(xfs, "fillId");
@@ -265,11 +250,9 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
 
     let mut cell_styles = Vec::new();
     let mut style_names = HashMap::new();
-    let cell_style_nodes = style_sheet
-        .children()
-        .filter(|n| n.has_tag_name("cellStyles"))
-        .collect::<Vec<Node>>()[0];
-    for cell_style in cell_style_nodes.children() {
+    for cell_style in style_sheet.children()
+        .filter(|node| node.has_tag_name("cellStyles"))
+        .flat_map(|node| node.children().filter(Node::is_element)) {
         let name = get_attribute(&cell_style, "name")?.to_string();
         let xf_id = get_number(cell_style, "xfId");
         let builtin_id = get_number(cell_style, "builtinId");
@@ -282,12 +265,15 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
     }
 
     let mut cell_xfs = Vec::new();
-    let cell_xfs_nodes = style_sheet
-        .children()
-        .filter(|n| n.has_tag_name("cellXfs"))
-        .collect::<Vec<Node>>()[0];
-    for xfs in cell_xfs_nodes.children() {
-        let xf_id = get_attribute(&xfs, "xfId")?.parse::<i32>()?;
+    let cell_xfs_nodes = get_child(style_sheet, "cellXfs")?;
+    for xfs in cell_xfs_nodes.children().filter(Node::is_element) {
+        let xf_id = match xfs.attribute("xfId") {
+            Some(value) => value.parse::<i32>()?,
+            None => 0,
+        };
+        if xf_id < 0 || xf_id as usize >= cell_style_xfs.len() {
+            return Err(XlsxError::Xml("Invalid cellXfs xfId".to_string()));
+        }
         let num_fmt_id = get_number(xfs, "numFmtId");
         let font_id = get_number(xfs, "fontId");
         let fill_id = get_number(xfs, "fillId");
@@ -304,7 +290,7 @@ pub(super) fn load_styles<R: Read + std::io::Seek>(
         // let pivotButton = get_bool(xfs, "pivotButton");
 
         let alignment_nodes = xfs
-            .children()
+            .children().filter(Node::is_element)
             .filter(|n| n.has_tag_name("alignment"))
             .collect::<Vec<Node>>();
         let alignment = if alignment_nodes.len() == 1 {
